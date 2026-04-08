@@ -1,24 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { GlassCard } from "@/components/secure-chat/GlassCard";
 import { GlowButton } from "@/components/secure-chat/GlowButton";
 import { SecurityBadge } from "@/components/secure-chat/SecurityBadge";
 import { MessageBubble } from "@/components/secure-chat/MessageBubble";
-import { FaceCameraWidget } from "@/components/secure-chat/FaceCameraWidget";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { encrypt, decrypt } from "@/lib/cryptoService";
 import { toast } from "sonner";
 import {
-  Search, Send, Paperclip, Phone, Video, MoreVertical,
+  Search, Send,
   Shield, ChevronLeft, Users, LogOut, Loader2, Lock, Unlock, AlertTriangle
 } from "lucide-react";
-import { 
-  loadFaceModels, startWebcam, getFaceDescriptor, 
-  verifyFaceMatchAll, detectFaces 
+import {
+  loadFaceModels, startWebcam, getFaceDescriptor,
+  verifyFaceMatchAll, detectFaces
 } from "@/services/faceService";
 
-const SHARED_KEY = "secure-chat-shared-secret-key"; // Shared key for development
+const SHARED_KEY = "secure-chat-shared-secret-key";
 
 type AuthState = "LOCKED" | "VERIFYING" | "UNLOCKED";
 
@@ -54,7 +52,7 @@ const ChatPage = () => {
   const [registeredDescriptors, setRegisteredDescriptors] = useState<number[][] | null>(null);
   const [isFaceLoading, setIsFaceLoading] = useState(true);
   const [confidence, setConfidence] = useState<number | null>(null);
-  
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -71,16 +69,15 @@ const ChatPage = () => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
-      
+
       if (user) {
         setIsFaceLoading(true);
         try {
-          // Fetch Real Contacts
           const { data: profilesData } = await supabase
             .from('profiles')
             .select('*')
             .neq('id', user.id);
-            
+
           if (profilesData) {
             const formatted = profilesData.map((p: any) => ({
               id: p.id,
@@ -103,9 +100,9 @@ const ChatPage = () => {
             .order('created_at', { ascending: false })
             .limit(1)
             .single();
-          
+
           if (faceError && faceError.code !== 'PGRST116') throw faceError;
-          
+
           if (faceData) {
             setRegisteredDescriptors(faceData.encoding);
           }
@@ -129,12 +126,12 @@ const ChatPage = () => {
     const startDetection = async () => {
       try {
         await startWebcam(videoRef.current!);
-        
+
         detectionIntervalRef.current = setInterval(async () => {
           if (!videoRef.current) return;
 
           const faces = await detectFaces(videoRef.current);
-          
+
           if (faces.length > 1) {
             setAuthState("LOCKED");
             setLockReason("MULTIPLE_FACES");
@@ -149,7 +146,7 @@ const ChatPage = () => {
               faceLostTimeRef.current = Date.now();
             }
             const timeSinceLost = Date.now() - faceLostTimeRef.current;
-            
+
             if (timeSinceLost > 800) {
               setAuthState("LOCKED");
               setLockReason("NO_FACE");
@@ -165,13 +162,13 @@ const ChatPage = () => {
           if (currentDescriptor && registeredDescriptors) {
             const result = verifyFaceMatchAll(currentDescriptor, registeredDescriptors);
             setConfidence(result.confidence);
-            
+
             if (result.isMatch) {
               matchScoreRef.current = Math.min(2, matchScoreRef.current + 1);
             } else {
               matchScoreRef.current = Math.max(-2, matchScoreRef.current - 1);
             }
-            
+
             if (matchScoreRef.current >= 2) {
               setAuthState("UNLOCKED");
               setLockReason(null);
@@ -189,7 +186,7 @@ const ChatPage = () => {
         setLockReason("CAMERA_ERROR");
       }
     };
-    
+
     startDetection();
 
     return () => {
@@ -204,9 +201,9 @@ const ChatPage = () => {
 
     const channel = supabase
       .channel('public:messages')
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
         table: 'messages'
       }, (payload) => {
         const newMessage = payload.new;
@@ -279,7 +276,7 @@ const ChatPage = () => {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      toast.success("Successfully logged out");
+      toast.success("Signed out successfully");
       navigate("/");
     } catch (error: any) {
       toast.error(error.message || "Failed to logout");
@@ -287,157 +284,211 @@ const ChatPage = () => {
   };
 
   return (
-    <div className="h-screen flex bg-background overflow-hidden relative font-sans">
-      <div className={cn(
-        "flex flex-col border-r border-border/50 bg-card/30 backdrop-blur-xl transition-all duration-300",
-        showSidebar ? "w-80" : "w-0 overflow-hidden",
-        "max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-40",
-        !showSidebar && "max-md:hidden"
+    <div className="h-screen flex bg-[#0f172a] overflow-hidden font-sans">
+
+      {/* ── SIDEBAR ─────────────────────────────────────────────── */}
+      <aside className={cn(
+        "flex flex-col shrink-0 border-r border-white/5 bg-[#0d1526] transition-all duration-300 overflow-hidden z-40",
+        showSidebar ? "w-72" : "w-0",
+        "md:relative absolute inset-y-0 left-0"
       )}>
-        <div className="p-4 border-b border-border/30">
-          <div className="flex items-center justify-between mb-4">
+        {/* Sidebar header */}
+        <div className="px-4 pt-4 pb-3 border-b border-white/5 shrink-0">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-xl gradient-btn flex items-center justify-center">
-                <Shield className="w-4 h-4 text-primary-foreground" />
+              <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shadow-lg shrink-0">
+                <Shield className="w-4 h-4 text-white" />
               </div>
-              <span className="font-bold text-foreground">Secure<span className="text-gradient">Chat</span></span>
+              <span className="font-bold text-sm text-white tracking-tight">
+                Secure<span className="text-indigo-400">Sight</span>
+              </span>
             </div>
-            <button className="md:hidden text-muted-foreground" onClick={() => setShowSidebar(false)}>
-              <ChevronLeft className="w-5 h-5" />
+            <button
+              className="md:hidden text-slate-400 hover:text-white transition-colors p-1 rounded"
+              onClick={() => setShowSidebar(false)}
+            >
+              <ChevronLeft className="w-4 h-4" />
             </button>
           </div>
-
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search conversations..."
-              className="w-full bg-muted/50 rounded-xl pl-9 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-border/30 focus:border-primary/40 transition-colors"
+              placeholder="Search..."
+              className="w-full bg-white/5 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-indigo-500/40 transition-colors"
             />
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-2">
-          {filteredContacts.map((contact) => (
+        {/* Contact list */}
+        <div className="flex-1 overflow-y-auto">
+          {filteredContacts.length === 0 ? (
+            <div className="px-4 py-10 text-center text-slate-600 text-xs">No contacts found</div>
+          ) : filteredContacts.map((contact) => (
             <button
               key={contact.id}
-              onClick={() => { setSelectedContact(contact); setShowSidebar(window.innerWidth >= 768); }}
+              onClick={() => {
+                setSelectedContact(contact);
+                if (window.innerWidth < 768) setShowSidebar(false);
+              }}
               className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 hover:bg-muted/30",
-                selectedContact.id === contact.id && "bg-muted/40 border-r-2 border-primary"
+                "w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 border-r-2",
+                selectedContact?.id === contact.id
+                  ? "bg-indigo-600/10 border-indigo-500"
+                  : "hover:bg-white/5 border-transparent"
               )}
             >
               <div className="relative shrink-0">
-                <div className={cn(
-                  "w-11 h-11 rounded-full flex items-center justify-center text-sm font-semibold",
-                  "bg-gradient-to-br from-primary/30 to-secondary/30 text-foreground"
-                )}>
+                <div className="w-9 h-9 rounded-full bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-300 uppercase">
                   {contact.avatar}
                 </div>
                 {contact.online && (
-                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-accent border-2 border-card" />
+                  <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-[#0d1526]" />
                 )}
               </div>
-
               <div className="flex-1 min-w-0 text-left">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-foreground truncate">{contact.name}</span>
-                  <span className="text-[10px] text-muted-foreground shrink-0">{contact.time}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-slate-200 truncate">{contact.name}</span>
+                  <span className="text-[10px] text-slate-500 shrink-0">{contact.time}</span>
                 </div>
-                <p className="text-xs text-muted-foreground truncate mt-0.5">{contact.lastMessage}</p>
+                <p className="text-xs text-slate-500 truncate mt-0.5">{contact.lastMessage}</p>
               </div>
             </button>
           ))}
         </div>
-      </div>
 
+        {/* Logout */}
+        <div className="px-4 py-3 border-t border-white/5 shrink-0">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* Mobile sidebar dimmer */}
+      {showSidebar && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/50 z-30"
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
+
+      {/* ── MAIN CHAT AREA ─────────────────────────────────────── */}
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="h-16 flex items-center justify-between px-4 border-b border-border/30 glass-strong shrink-0">
-          <div className="flex items-center gap-3">
-            <button className="md:hidden text-muted-foreground mr-1" onClick={() => setShowSidebar(true)}>
+
+        {/* Top header */}
+        <header className="h-14 flex items-center justify-between px-4 gap-2 border-b border-white/5 bg-[#0d1526]/80 backdrop-blur-sm shrink-0">
+          {/* Left: hamburger + contact info */}
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              className="md:hidden text-slate-400 hover:text-white transition-colors shrink-0"
+              onClick={() => setShowSidebar(true)}
+            >
               <Users className="w-5 h-5" />
             </button>
             {selectedContact ? (
-              <>
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary/30 to-secondary/30 flex items-center justify-center text-sm font-semibold text-foreground">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-xs font-bold text-indigo-300 uppercase shrink-0">
                   {selectedContact.avatar}
                 </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">{selectedContact.name}</h3>
-                  <p className="text-[11px] text-muted-foreground">
-                    {selectedContact.online ? "Online" : "Last seen recently"}
-                  </p>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-white truncate leading-tight">{selectedContact.name}</h3>
+                  <p className="text-[10px] text-slate-500">{selectedContact.online ? "● Online" : "Offline"}</p>
                 </div>
-              </>
-            ) : (
-              <div className="text-sm font-medium text-muted-foreground">
-                No active contacts
               </div>
+            ) : (
+              <span className="text-sm text-slate-500">Select a contact</span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Right: camera dot + security badge — properly contained, no overflow */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Live camera scanning indicator */}
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
+              <div className="relative flex h-2 w-2 shrink-0">
+                <span className={cn(
+                  "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                  isSecure ? "bg-green-400" : "bg-red-400"
+                )}></span>
+                <span className={cn(
+                  "relative inline-flex rounded-full h-2 w-2",
+                  isSecure ? "bg-green-500" : "bg-red-500"
+                )}></span>
+              </div>
+              <span className="text-[10px] text-slate-400 hidden sm:block">CAM</span>
+            </div>
             <SecurityBadge isSecure={isSecure} />
-            <button onClick={handleLogout} className="p-2 rounded-xl hover:bg-muted/50 text-destructive transition-colors" title="Logout">
-              <LogOut className="w-4 h-4" />
-            </button>
           </div>
-        </div>
+        </header>
 
+        {/* Auth status bar */}
         <div className={cn(
-          "px-4 py-1.5 flex items-center justify-between transition-all duration-700 text-[10px] font-bold uppercase tracking-widest border-b border-white/5",
-          authState === "UNLOCKED" ? "bg-green-500/5 text-green-500" : 
-          authState === "VERIFYING" ? "bg-indigo-500/5 text-indigo-400 animate-pulse" : 
+          "px-4 py-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest border-b border-white/5 transition-colors duration-700 shrink-0",
+          authState === "UNLOCKED" ? "bg-green-500/5 text-green-500" :
+          authState === "VERIFYING" ? "bg-indigo-500/5 text-indigo-400" :
           "bg-red-500/5 text-red-500"
         )}>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {authState === "UNLOCKED" ? (
               <><Unlock className="w-3 h-3" /> Secure View Active</>
             ) : authState === "VERIFYING" ? (
-              <><Loader2 className="w-3 h-3 animate-spin" /> Verifying Identity...</>
+              <><Loader2 className="w-3 h-3 animate-spin" /> Verifying identity...</>
             ) : (
-              <><Lock className="w-3 h-3" /> 
-                {lockReason === "MULTIPLE_FACES" ? "SHOULDER SURFING DETECTED" : 
-                 lockReason === "NO_FACE" ? "VAULT LOCKED" : 
-                 lockReason === "IDENTITY_MISMATCH" ? "VERIFICATION FAILED" :
-                 "Biometric Lock Active"}
+              <><Lock className="w-3 h-3" />
+                {lockReason === "MULTIPLE_FACES" ? " Multiple faces detected" :
+                 lockReason === "NO_FACE" ? " No face detected — locked" :
+                 " Biometric verification required"}
               </>
             )}
           </div>
           {confidence !== null && authState !== "LOCKED" && (
-            <div className="flex items-center gap-2 font-mono opacity-80">
-              <span>MATCH:</span>
+            <div className="flex items-center gap-1 font-mono">
+              <span className="text-slate-600">Match:</span>
               <span className={cn(
                 "font-bold",
-                confidence > 80 ? "text-green-500" : confidence > 60 ? "text-yellow-500" : "text-red-500"
+                confidence > 80 ? "text-green-500" : confidence > 60 ? "text-yellow-400" : "text-red-500"
               )}>{confidence}%</span>
             </div>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6" ref={scrollRef}>
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scroll-smooth" ref={scrollRef}>
+          {/* Locked banner */}
           {authState !== "UNLOCKED" && (
-            <div className="flex flex-col items-center justify-center py-16 space-y-4 blur-transition">
-               <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
-                  {lockReason === "MULTIPLE_FACES" ? <AlertTriangle className="w-5 h-5 text-red-500" /> : <Lock className="w-5 h-5 text-red-500" />}
-               </div>
-               <div className="text-center">
-                 <h4 className="text-xs font-bold text-slate-300 mb-1 uppercase tracking-widest">Messages Hidden</h4>
-                 <p className="text-xs text-slate-500 max-w-[200px]">
-                   {lockReason === "MULTIPLE_FACES" ? "Access suspended. Multiple faces detected." : 
-                    "Biometric authentication required to reveal messages."}
-                 </p>
-               </div>
+            <div className="flex flex-col items-center justify-center py-12 space-y-3 transition-all duration-500">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
+                {lockReason === "MULTIPLE_FACES"
+                  ? <AlertTriangle className="w-5 h-5 text-red-500" />
+                  : <Lock className="w-5 h-5 text-red-500" />}
+              </div>
+              <div className="text-center">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Messages Hidden</p>
+                <p className="text-xs text-slate-600 max-w-xs mx-auto">
+                  {lockReason === "MULTIPLE_FACES"
+                    ? "Multiple faces detected. Access suspended."
+                    : "Face the camera to unlock your messages."}
+                </p>
+              </div>
             </div>
           )}
 
+          {/* Empty state */}
           {messages.length === 0 && authState === "UNLOCKED" && (
-            <div className="text-center py-10 text-muted-foreground animate-fade-in">
-              <p className="text-sm">No messages yet. Start a secure conversation.</p>
+            <div className="flex flex-col items-center justify-center py-12 space-y-2">
+              <div className="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20">
+                <Shield className="w-5 h-5 text-indigo-400" />
+              </div>
+              <p className="text-xs text-slate-500">Vault open. Start a secure conversation.</p>
             </div>
           )}
 
+          {/* Messages list */}
           {messages.map((msg, i) => (
             <MessageBubble
               key={msg.id}
@@ -450,46 +501,54 @@ const ChatPage = () => {
           ))}
         </div>
 
-        <div className="p-4 border-t border-border/30 bg-card/20 shrink-0">
-          <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}>
-            <button type="button" className="p-2.5 rounded-xl hover:bg-muted/50 text-muted-foreground transition-colors">
-              <Paperclip className="w-5 h-5" />
-            </button>
+        {/* Message input */}
+        <div className="px-4 py-3 border-t border-white/5 bg-[#0d1526]/60 shrink-0">
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
+          >
             <input
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
-              placeholder={isSecure ? "Type a secure message..." : "Unlock to send messages"}
+              placeholder={isSecure ? "Type a secure message..." : "Face camera to unlock..."}
               disabled={!isSecure}
               className={cn(
-                "flex-1 bg-muted/40 rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none border border-border/30 transition-all duration-300 focus:border-primary/40 focus:shadow-[0_0_15px_hsl(var(--neon-blue)/0.1)]",
-                !isSecure && "cursor-not-allowed opacity-50"
+                "flex-1 bg-white/5 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none border border-white/5 transition-all duration-300 min-w-0",
+                isSecure ? "focus:border-indigo-500/40" : "cursor-not-allowed opacity-40"
               )}
             />
-            <GlowButton type="submit" size="sm" className="px-4 py-3 rounded-xl" disabled={!isSecure}>
+            <GlowButton
+              type="submit"
+              size="sm"
+              className="rounded-xl shrink-0"
+              disabled={!isSecure}
+            >
               <Send className="w-4 h-4" />
             </GlowButton>
           </form>
         </div>
       </div>
 
-      <FaceCameraWidget isSecure={isSecure} onToggle={() => {}} />
-      
-      <video 
+      {/* Hidden webcam for face detection */}
+      <video
         ref={videoRef}
-        autoPlay 
-        muted 
-        playsInline 
-        className="fixed bottom-0 right-0 w-[1px] h-[1px] opacity-0 pointer-events-none"
+        autoPlay
+        muted
+        playsInline
+        className="fixed bottom-0 right-0 w-px h-px opacity-0 pointer-events-none"
       />
-      
+
+      {/* Vault loading overlay */}
       {isFaceLoading && (
-        <div className="fixed inset-0 z-[60] bg-background/95 backdrop-blur-xl flex flex-col items-center justify-center">
-          <div className="relative mb-8">
-            <Loader2 className="w-16 h-16 text-primary animate-spin" />
-            <Shield className="absolute inset-0 m-auto w-6 h-6 text-primary" />
+        <div className="fixed inset-0 z-50 bg-[#0f172a]/97 backdrop-blur-xl flex flex-col items-center justify-center gap-4">
+          <div className="relative w-14 h-14 flex items-center justify-center">
+            <Loader2 className="w-14 h-14 text-indigo-500 animate-spin absolute" />
+            <Shield className="w-5 h-5 text-indigo-400" />
           </div>
-          <h2 className="text-xl font-bold text-foreground mb-2">Initializing Vault</h2>
-          <p className="text-muted-foreground text-sm">Loading neural weights and secure protocols...</p>
+          <div className="text-center">
+            <h2 className="text-lg font-bold text-white mb-1">Initializing Vault</h2>
+            <p className="text-sm text-slate-500">Loading secure protocols...</p>
+          </div>
         </div>
       )}
     </div>
