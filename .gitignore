@@ -1,0 +1,32 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# Build outputs
+/frontend/dist/
+dist/
+
+# Python cache and environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env_python/
+.pytest_cache/
+
+# OS Junks
+.DS_Store
+Thumbs.db
+*.log
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# IDE settings
+.lovable/

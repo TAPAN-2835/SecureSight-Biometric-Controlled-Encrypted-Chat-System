@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Secure Chat GUI</title>
+    <style>
+        body {
+            background: #0a0a0f;
+            color: #0ff;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        .chat-box {
+            width: 90%;
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #111;
+            border-radius: 12px;
+            box-shadow: 0 0 15px #0ff3;
+        }
+
+        .messages {
+            height: 300px;
+            overflow-y: auto;
+            background: #000;
+            padding: 10px;
+            border-radius: 8px;
+            color: #0f0;
+        }
+
+        input,
+        button {
+            padding: 10px;
+            margin-top: 10px;
+            border: none;
+            border-radius: 5px;
+        }
+
+        input {
+            width: 70%;
+            background: #222;
+            color: #0ff;
+        }
+
+        button {
+            background: #0ff;
+            color: #000;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="chat-box">
+        <h2>🔐 Secure Chat</h2>
+        <input id="ip" placeholder="Enter Server IP">
+        <button onclick="connect()">Connect</button>
+        <div class="messages" id="messages">Waiting for connection...</div>
+        <input id="message" placeholder="Type a message...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        async function connect() {
+            const ip = document.getElementById("ip").value;
+            const res = await fetch("/connect", {
+                method: "POST",
+                body: new URLSearchParams({ ip })
+            });
+            document.getElementById("messages").innerHTML += `<br>Connected to ${ip}`;
+        }
+
+        async function sendMessage() {
+            const msg = document.getElementById("message").value;
+            const res = await fetch("/send", {
+                method: "POST",
+                body: new URLSearchParams({ message: msg })
+            });
+            document.getElementById("messages").innerHTML += `<br><b>You:</b> ${msg}`;
+            document.getElementById("message").value = "";
+        }
+    </script>
+</body>
+
+</html>
