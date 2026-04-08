@@ -18,7 +18,7 @@ export const FloatingInput = ({ label, className, ...props }: FloatingInputProps
         onBlur={(e) => { setFocused(false); props.onBlur?.(e); }}
         className={cn(
           "w-full bg-muted/50 border border-border rounded-xl px-4 pt-6 pb-2 text-foreground text-sm outline-none transition-all duration-300",
-          "focus:border-primary/60 focus:shadow-[0_0_15px_hsl(var(--neon-blue)/0.15)]",
+          "focus:border-indigo-500/60 focus:shadow-[0_0_15px_rgba(99,102,241,0.15)]",
           "placeholder:text-transparent",
           className
         )}

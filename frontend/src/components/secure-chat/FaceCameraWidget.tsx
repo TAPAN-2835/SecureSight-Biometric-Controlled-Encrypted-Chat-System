@@ -1,39 +1,24 @@
 import { cn } from "@/lib/utils";
-import { Camera, Eye, EyeOff } from "lucide-react";
 
 interface FaceCameraWidgetProps {
   isSecure: boolean;
-  onToggle: () => void;
+  onToggle: () => void; // kept for interface compatibility
 }
 
-export const FaceCameraWidget = ({ isSecure, onToggle }: FaceCameraWidgetProps) => (
-  <button
-    onClick={onToggle}
-    className={cn(
-      "fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 cursor-pointer",
-      "glass-strong",
-      isSecure
-        ? "border-accent/50 neon-glow-green"
-        : "border-destructive/50 neon-glow-red"
-    )}
-    title="Toggle face detection (demo)"
-  >
-    <div className="relative">
-      <Camera className={cn(
-        "w-5 h-5 transition-colors duration-500",
-        isSecure ? "text-accent" : "text-destructive"
-      )} />
-      <div className="absolute -top-1 -right-1">
-        {isSecure
-          ? <Eye className="w-3 h-3 text-accent" />
-          : <EyeOff className="w-3 h-3 text-destructive" />
-        }
-      </div>
+export const FaceCameraWidget = ({ isSecure }: FaceCameraWidgetProps) => (
+  <div className="fixed top-5 right-20 z-50 flex items-center justify-center gap-2 px-3 py-1.5 rounded-full bg-[#0f172a]/90 backdrop-blur-md border border-white/10 shadow-md">
+    <div className="relative flex h-2 w-2">
+      <span className={cn(
+        "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+        isSecure ? "bg-green-400" : "bg-red-400"
+      )}></span>
+      <span className={cn(
+        "relative inline-flex rounded-full h-2 w-2",
+        isSecure ? "bg-green-500" : "bg-red-500"
+      )}></span>
     </div>
-    {/* Pulse ring */}
-    <div className={cn(
-      "absolute inset-0 rounded-full animate-ping opacity-20",
-      isSecure ? "bg-accent" : "bg-destructive"
-    )} />
-  </button>
+    <span className="text-[10px] font-medium text-slate-300 tracking-wide uppercase">
+      Scanning Vault
+    </span>
+  </div>
 );

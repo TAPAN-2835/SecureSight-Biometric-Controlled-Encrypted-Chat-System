@@ -386,10 +386,10 @@ const ChatPage = () => {
         </div>
 
         <div className={cn(
-          "px-4 py-2 flex items-center justify-between transition-all duration-500 text-xs font-bold uppercase tracking-widest border-b border-border/20",
-          authState === "UNLOCKED" ? "bg-accent/10 text-accent" : 
-          authState === "VERIFYING" ? "bg-primary/10 text-primary animate-pulse" : 
-          "bg-destructive/10 text-destructive"
+          "px-4 py-1.5 flex items-center justify-between transition-all duration-700 text-[10px] font-bold uppercase tracking-widest border-b border-white/5",
+          authState === "UNLOCKED" ? "bg-green-500/5 text-green-500" : 
+          authState === "VERIFYING" ? "bg-indigo-500/5 text-indigo-400 animate-pulse" : 
+          "bg-red-500/5 text-red-500"
         )}>
           <div className="flex items-center gap-2">
             {authState === "UNLOCKED" ? (
@@ -399,35 +399,34 @@ const ChatPage = () => {
             ) : (
               <><Lock className="w-3 h-3" /> 
                 {lockReason === "MULTIPLE_FACES" ? "SHOULDER SURFING DETECTED" : 
-                 lockReason === "NO_FACE" ? "USER AWAY - VAULT LOCKED" : 
-                 lockReason === "IDENTITY_MISMATCH" ? "IDENTITY VERIFICATION FAILED" :
+                 lockReason === "NO_FACE" ? "VAULT LOCKED" : 
+                 lockReason === "IDENTITY_MISMATCH" ? "VERIFICATION FAILED" :
                  "Biometric Lock Active"}
               </>
             )}
           </div>
           {confidence !== null && authState !== "LOCKED" && (
-            <div className="flex items-center gap-2 font-mono bg-background/40 px-2 py-0.5 rounded backdrop-blur-sm shadow-sm border border-border/20">
-              <span className="opacity-80">MATCH:</span>
+            <div className="flex items-center gap-2 font-mono opacity-80">
+              <span>MATCH:</span>
               <span className={cn(
                 "font-bold",
-                confidence > 80 ? "text-green-500" : confidence > 60 ? "text-yellow-500" : "text-destructive"
+                confidence > 80 ? "text-green-500" : confidence > 60 ? "text-yellow-500" : "text-red-500"
               )}>{confidence}%</span>
             </div>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4" ref={scrollRef}>
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6" ref={scrollRef}>
           {authState !== "UNLOCKED" && (
-            <div className="flex flex-col items-center justify-center py-10 space-y-4 animate-in fade-in duration-500">
-               <div className="w-16 h-16 rounded-3xl bg-destructive/10 flex items-center justify-center border border-destructive/20 neon-glow-red">
-                  {lockReason === "MULTIPLE_FACES" ? <AlertTriangle className="w-8 h-8 text-destructive" /> : <Lock className="w-8 h-8 text-destructive" />}
+            <div className="flex flex-col items-center justify-center py-16 space-y-4 blur-transition">
+               <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
+                  {lockReason === "MULTIPLE_FACES" ? <AlertTriangle className="w-5 h-5 text-red-500" /> : <Lock className="w-5 h-5 text-red-500" />}
                </div>
                <div className="text-center">
-                 <h4 className="text-sm font-bold text-foreground mb-1 uppercase tracking-wider">Messages Encrypted</h4>
-                 <p className="text-xs text-muted-foreground max-w-[200px]">
-                   {lockReason === "MULTIPLE_FACES" ? "Access suspended. Multiple faces detected in viewing area." : 
-                    lockReason === "NO_FACE" ? "Please face the camera to unlock your secure messages." :
-                    "Biometric authentication required to reveal message content."}
+                 <h4 className="text-xs font-bold text-slate-300 mb-1 uppercase tracking-widest">Messages Hidden</h4>
+                 <p className="text-xs text-slate-500 max-w-[200px]">
+                   {lockReason === "MULTIPLE_FACES" ? "Access suspended. Multiple faces detected." : 
+                    "Biometric authentication required to reveal messages."}
                  </p>
                </div>
             </div>

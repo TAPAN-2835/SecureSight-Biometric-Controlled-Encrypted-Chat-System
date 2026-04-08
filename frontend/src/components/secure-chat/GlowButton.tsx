@@ -11,8 +11,8 @@ export const GlowButton = ({ children, className, variant = "primary", size = "m
   const base = "relative font-semibold rounded-2xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none";
 
   const variants = {
-    primary: "gradient-btn text-primary-foreground hover:shadow-[0_0_30px_hsl(var(--neon-blue)/0.4),0_0_60px_hsl(var(--neon-purple)/0.2)]",
-    secondary: "glass border-primary/30 text-foreground hover:border-primary/60 hover:shadow-[0_0_20px_hsl(var(--neon-blue)/0.2)]",
+    primary: "gradient-btn text-white hover:shadow-[0_0_25px_rgba(99,102,241,0.4)] hover:brightness-110",
+    secondary: "glass border-slate-700 text-foreground hover:border-indigo-500/50 hover:bg-slate-700/60",
     ghost: "text-muted-foreground hover:text-foreground hover:bg-muted/50",
   };
 

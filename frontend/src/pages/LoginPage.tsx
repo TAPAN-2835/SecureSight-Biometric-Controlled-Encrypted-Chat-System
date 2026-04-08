@@ -73,8 +73,8 @@ const LoginPage = () => {
         <div className="animate-fade-in max-w-md">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-2xl gradient-btn flex items-center justify-center neon-glow-blue">
-              <Shield className="w-6 h-6 text-primary-foreground" />
+            <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-black/20">
+              <Shield className="w-6 h-6 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-foreground">
               Secure<span className="text-gradient">Chat</span>
@@ -161,22 +161,7 @@ const LoginPage = () => {
             </GlowButton>
           </form>
 
-          {/* Divider */}
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground">or continue with</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
 
-          {/* Social buttons */}
-          <div className="grid grid-cols-2 gap-3">
-            <GlowButton variant="secondary" size="sm" type="button">
-              Google
-            </GlowButton>
-            <GlowButton variant="secondary" size="sm" type="button">
-              GitHub
-            </GlowButton>
-          </div>
 
           <p className="text-center text-xs text-muted-foreground mt-6">
             By continuing, you agree to our Terms & Privacy Policy

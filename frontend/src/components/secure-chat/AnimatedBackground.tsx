@@ -1,9 +1,9 @@
 export const AnimatedBackground = () => (
   <div className="absolute inset-0 overflow-hidden">
     <div
-      className="absolute inset-0 opacity-30 animate-mesh-shift"
+      className="absolute inset-0 opacity-[0.15] animate-mesh-shift"
       style={{
-        background: "linear-gradient(-45deg, hsl(240 20% 4%), hsl(263 68% 20%), hsl(190 100% 15%), hsl(240 20% 8%))",
+        background: "linear-gradient(-45deg, #0f172a, #1e1b4b, #172554, #0f172a)",
         backgroundSize: "400% 400%",
       }}
     />
@@ -18,8 +18,8 @@ export const AnimatedBackground = () => (
           left: `${10 + i * 18}%`,
           top: `${15 + (i % 3) * 25}%`,
           background: i % 2 === 0
-            ? "radial-gradient(circle, hsl(190 100% 44% / 0.4), transparent)"
-            : "radial-gradient(circle, hsl(263 68% 56% / 0.4), transparent)",
+            ? "radial-gradient(circle, rgba(99, 102, 241, 0.15), transparent)"
+            : "radial-gradient(circle, rgba(168, 85, 247, 0.1), transparent)",
           animationDelay: `${i * 1.2}s`,
           animationDuration: `${5 + i}s`,
         }}

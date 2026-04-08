@@ -19,24 +19,28 @@ export const MessageBubble = ({ text, sent, time, isSecure, index = 0 }: Message
     style={{ animationDelay: `${index * 0.05}s` }}
   >
     <div className={cn(
-      "max-w-[75%] rounded-2xl px-4 py-2.5 transition-all duration-500",
+      "max-w-[75%] rounded-2xl px-4 py-3 transition-all duration-500 shadow-sm",
       sent
-        ? "bg-gradient-to-r from-primary/80 to-secondary/80 text-primary-foreground"
-        : "glass"
+        ? "bg-gradient-to-r from-indigo-500 to-indigo-600 text-white rounded-tr-md shadow-indigo-500/20"
+        : "bg-slate-800/80 border border-white/5 text-slate-100 rounded-tl-md"
     )}>
       <p className={cn(
-        "text-sm leading-relaxed transition-all duration-500",
-        !isSecure && "blur-[6px] select-none"
+        "text-sm leading-relaxed blur-transition",
+        !isSecure ? "blur-[8px] opacity-40 select-none" : "blur-0 opacity-100"
       )}>
         {isSecure ? text : scrambleText(text)}
       </p>
-      <p className={cn(
-        "text-[10px] mt-1 transition-all duration-500",
-        sent ? "text-primary-foreground/60" : "text-muted-foreground",
-        !isSecure && "blur-[4px]"
+      <div className={cn(
+        "flex justify-end mt-1.5 blur-transition",
+        !isSecure ? "blur-[6px] opacity-30" : "blur-0 opacity-100"
       )}>
-        {time}
-      </p>
+        <span className={cn(
+          "text-[10px] font-medium tracking-wide",
+          sent ? "text-indigo-200" : "text-slate-400"
+        )}>
+          {time}
+        </span>
+      </div>
     </div>
   </div>
 );

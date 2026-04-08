@@ -165,8 +165,8 @@ const FaceRegisterPage = () => {
 
             <div className={cn(
               "absolute inset-2 rounded-full transition-all duration-700",
-              ["front", "smile", "left", "right"].includes(step) && "neon-glow-blue animate-pulse-glow",
-              step === "complete" && "neon-glow-green",
+              ["front", "smile", "left", "right"].includes(step) && "shadow-[0_0_20px_rgba(99,102,241,0.3)] animate-pulse-glow",
+              step === "complete" && "shadow-[0_0_20px_rgba(34,197,94,0.3)]",
             )} />
 
             <div className={cn(
