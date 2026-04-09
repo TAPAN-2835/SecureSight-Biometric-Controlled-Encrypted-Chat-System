@@ -32,11 +32,12 @@ The application is built using **Vite + React + Tailwind CSS** and is explicitly
 -- Profiles
 CREATE TABLE public.profiles (
   id UUID REFERENCES auth.users NOT NULL PRIMARY KEY,
+  email TEXT,
   has_face_registered BOOLEAN DEFAULT FALSE,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Faces
+-- faces
 CREATE TABLE public.faces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -52,6 +53,46 @@ CREATE TABLE public.messages (
   payload TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Enable RLS and Set Policies
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.faces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Profiles are viewable by authenticated users" ON public.profiles 
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Users can manage own profile" ON public.profiles 
+  FOR ALL TO authenticated USING (auth.uid() = id);
+
+CREATE POLICY "Users can manage own faces" ON public.faces 
+  FOR ALL TO authenticated USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can read own messages" ON public.messages 
+  FOR SELECT TO authenticated USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
+CREATE POLICY "Users can send messages" ON public.messages 
+  FOR INSERT TO authenticated WITH CHECK (auth.uid() = sender_id);
+
+-- Enable Realtime (Robust Version)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
+    CREATE PUBLICATION supabase_realtime;
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE messages;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'profiles'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE profiles;
+  END IF;
+END $$;
 ```
 
 #### Environment Setup

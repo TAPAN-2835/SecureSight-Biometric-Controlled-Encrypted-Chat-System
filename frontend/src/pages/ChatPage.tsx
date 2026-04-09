@@ -98,15 +98,22 @@ const ChatPage = () => {
         setIsFaceLoading(true);
         try {
           // Load initial contacts (everyone except self)
-          const { data: profilesData } = await supabase
+          const { data: profilesData, error: profilesError } = await supabase
             .from("profiles")
-            .select("*")
+            .select("id, email, has_face_registered")
             .neq("id", user.id);
 
-          if (profilesData) {
+          if (profilesError) {
+            console.error("[Contacts] RLS or query error:", profilesError.message, profilesError);
+          }
+
+          if (profilesData && profilesData.length > 0) {
             const formatted = profilesData.map(formatProfile);
             setContacts(formatted);
-            if (formatted.length > 0) setSelectedContact(formatted[0]);
+            setSelectedContact(formatted[0]);
+            console.log(`[Contacts] Loaded ${formatted.length} contacts:`, formatted.map(c => c.name));
+          } else {
+            console.warn("[Contacts] No contacts returned — check Supabase RLS policy on profiles table.");
           }
 
           // Load face models + current user's registered descriptors
@@ -333,6 +340,7 @@ const ChatPage = () => {
 
   const fetchMessages = async () => {
     if (!currentUser || !selectedContact) return;
+    console.log(`[Messages] Fetching between ${currentUser.id} ↔ ${selectedContact.id}`);
     const { data, error } = await supabase
       .from("messages")
       .select("*")
@@ -342,7 +350,7 @@ const ChatPage = () => {
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.error("Error fetching messages:", error);
+      console.error("[Messages] RLS or query error:", error.message, error);
     } else {
       const decryptedMessages = await Promise.all(
         data.map(async (m) => ({
@@ -373,7 +381,8 @@ const ChatPage = () => {
     const { error } = await supabase.from("messages").insert([newMessage]);
 
     if (error) {
-      toast.error("Failed to send message");
+      console.error("[Send] RLS or insert error:", error.message, error);
+      toast.error("Failed to send message — " + error.message);
     } else {
       setMessageInput("");
     }
