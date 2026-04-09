@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { GlowButton } from "@/components/secure-chat/GlowButton";
 import { SecurityBadge } from "@/components/secure-chat/SecurityBadge";
@@ -17,6 +17,9 @@ import {
 } from "@/services/faceService";
 
 const SHARED_KEY = "secure-chat-shared-secret-key";
+// Minimum confidence % required to keep the screen unlocked.
+// 45 % is practical for real webcam / lighting conditions with TinyFaceDetector.
+const CONFIDENCE_UNLOCK_THRESHOLD = 45;
 
 type AuthState = "LOCKED" | "VERIFYING" | "UNLOCKED";
 
@@ -58,6 +61,8 @@ const ChatPage = () => {
   const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const matchScoreRef = useRef(0);
   const faceLostTimeRef = useRef<number | null>(null);
+  // Keep refs in sync with state to avoid stale closures in detection interval
+  const authStateRef = useRef<AuthState>("LOCKED");
 
   const isSecure = authState === "UNLOCKED";
 
@@ -65,6 +70,25 @@ const ChatPage = () => {
     c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // ── Helper: set auth state and keep ref in sync ──────────────────────
+  const setAuth = useCallback((state: AuthState, reason: string | null = null) => {
+    authStateRef.current = state;
+    setAuthState(state);
+    setLockReason(reason);
+  }, []);
+
+  // ── Profile → Contact formatter ───────────────────────────────────────
+  const formatProfile = (p: any): Contact => ({
+    id: p.id,
+    name: p.email ? p.email.split("@")[0] : "User",
+    avatar: p.email ? p.email.charAt(0).toUpperCase() : "U",
+    lastMessage: "Secure exchange available",
+    time: "",
+    online: true,
+    unread: 0,
+  });
+
+  // ── Init: load user, contacts, face models ────────────────────────────
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -73,35 +97,29 @@ const ChatPage = () => {
       if (user) {
         setIsFaceLoading(true);
         try {
+          // Load initial contacts (everyone except self)
           const { data: profilesData } = await supabase
-            .from('profiles')
-            .select('*')
-            .neq('id', user.id);
+            .from("profiles")
+            .select("*")
+            .neq("id", user.id);
 
           if (profilesData) {
-            const formatted = profilesData.map((p: any) => ({
-              id: p.id,
-              name: p.email ? p.email.split('@')[0] : 'User',
-              avatar: p.email ? p.email.charAt(0).toUpperCase() : 'U',
-              lastMessage: "Secure exchange available",
-              time: "",
-              online: true,
-              unread: 0
-            }));
+            const formatted = profilesData.map(formatProfile);
             setContacts(formatted);
             if (formatted.length > 0) setSelectedContact(formatted[0]);
           }
 
+          // Load face models + current user's registered descriptors
           await loadFaceModels();
           const { data: faceData, error: faceError } = await supabase
-            .from('faces')
-            .select('encoding')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: false })
+            .from("faces")
+            .select("encoding")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
             .limit(1)
             .single();
 
-          if (faceError && faceError.code !== 'PGRST116') throw faceError;
+          if (faceError && faceError.code !== "PGRST116") throw faceError;
 
           if (faceData) {
             setRegisteredDescriptors(faceData.encoding);
@@ -120,105 +138,185 @@ const ChatPage = () => {
     };
   }, []);
 
+  // ── Real-time: auto-update contact list when new users register ───────
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const channel = supabase
+      .channel("profiles-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        (payload) => {
+          const record = payload.new as any;
+          // Ignore our own profile changes
+          if (!record || record.id === currentUser.id) return;
+
+          if (payload.eventType === "INSERT") {
+            setContacts((prev) => {
+              // Don't add duplicates
+              if (prev.some((c) => c.id === record.id)) return prev;
+              return [...prev, formatProfile(record)];
+            });
+          } else if (payload.eventType === "UPDATE") {
+            setContacts((prev) =>
+              prev.map((c) => (c.id === record.id ? { ...c, ...formatProfile(record) } : c))
+            );
+          } else if (payload.eventType === "DELETE") {
+            const oldRecord = payload.old as any;
+            setContacts((prev) => prev.filter((c) => c.id !== oldRecord?.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser]);
+
+  // ── Face detection loop (runs once when user + descriptors are ready) ─
   useEffect(() => {
     if (!currentUser || !registeredDescriptors || !videoRef.current) return;
+
+    // Prevent starting multiple loops
+    if (detectionIntervalRef.current) clearInterval(detectionIntervalRef.current);
 
     const startDetection = async () => {
       try {
         await startWebcam(videoRef.current!);
 
         detectionIntervalRef.current = setInterval(async () => {
-          if (!videoRef.current) return;
+          if (!videoRef.current || videoRef.current.videoWidth === 0) return;
 
+          // ── 1. Count all visible faces ────────────────────────────────
           const faces = await detectFaces(videoRef.current);
+          console.debug(`[FaceAuth] faces detected: ${faces.length}`);
 
           if (faces.length > 1) {
-            setAuthState("LOCKED");
-            setLockReason("MULTIPLE_FACES");
+            // Multiple faces / another person's head or shoulder in frame
+            setAuth("LOCKED", "MULTIPLE_FACES");
             setConfidence(null);
-            matchScoreRef.current = -2;
+            matchScoreRef.current = -3; // Instant hard lock
             faceLostTimeRef.current = null;
             return;
           }
 
+          // ── 2. No face in frame ───────────────────────────────────────
           if (faces.length === 0) {
             if (!faceLostTimeRef.current) {
               faceLostTimeRef.current = Date.now();
             }
             const timeSinceLost = Date.now() - faceLostTimeRef.current;
 
-            if (timeSinceLost > 800) {
-              setAuthState("LOCKED");
-              setLockReason("NO_FACE");
+            if (timeSinceLost > 1200) {
+              setAuth("LOCKED", "NO_FACE");
               setConfidence(null);
-              matchScoreRef.current = -2;
+              matchScoreRef.current = Math.max(-3, matchScoreRef.current - 1);
             }
             return;
           }
 
           faceLostTimeRef.current = null;
 
+          // ── 3. Get descriptor and verify identity ─────────────────────
           const currentDescriptor = await getFaceDescriptor(videoRef.current);
           if (currentDescriptor && registeredDescriptors) {
             const result = verifyFaceMatchAll(currentDescriptor, registeredDescriptors);
             setConfidence(result.confidence);
+            console.debug(`[FaceAuth] distance: ${result.distance.toFixed(3)}, confidence: ${result.confidence}%, match: ${result.isMatch}`);
 
-            if (result.isMatch) {
-              matchScoreRef.current = Math.min(2, matchScoreRef.current + 1);
+            const meetsThreshold =
+              result.isMatch && result.confidence >= CONFIDENCE_UNLOCK_THRESHOLD;
+
+            if (meetsThreshold) {
+              matchScoreRef.current = Math.min(3, matchScoreRef.current + 1);
             } else {
-              matchScoreRef.current = Math.max(-2, matchScoreRef.current - 1);
+              matchScoreRef.current = Math.max(-3, matchScoreRef.current - 1);
             }
 
-            if (matchScoreRef.current >= 2) {
-              setAuthState("UNLOCKED");
-              setLockReason(null);
+            // Unlock after just 1 consecutive positive match for fast response
+            if (matchScoreRef.current >= 1) {
+              if (authStateRef.current !== "UNLOCKED") {
+                setAuth("UNLOCKED", null);
+              }
             } else if (matchScoreRef.current <= -2) {
-              setAuthState("LOCKED");
-              setLockReason("IDENTITY_MISMATCH");
-            } else if (authState === "LOCKED") {
-              setAuthState("VERIFYING");
+              if (authStateRef.current !== "LOCKED") {
+                setAuth("LOCKED", "IDENTITY_MISMATCH");
+              }
+            } else if (authStateRef.current === "LOCKED") {
+              setAuth("VERIFYING", null);
             }
           }
-        }, 250);
+        }, 350);
       } catch (err) {
         console.error("Detection loop error:", err);
-        setAuthState("LOCKED");
-        setLockReason("CAMERA_ERROR");
+        setAuth("LOCKED", "CAMERA_ERROR");
       }
     };
 
     startDetection();
 
     return () => {
-      if (detectionIntervalRef.current) clearInterval(detectionIntervalRef.current);
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+        detectionIntervalRef.current = null;
+      }
     };
-  }, [currentUser, registeredDescriptors, authState]);
+  }, [currentUser, registeredDescriptors]); // ← authState intentionally removed to prevent interval restart
 
+  // ── Fetch messages when contact changes ───────────────────────────────
+  useEffect(() => {
+    if (!currentUser || !selectedContact) return;
+    fetchMessages();
+  }, [currentUser, selectedContact]);
+
+  // ── Real-time messages subscription ───────────────────────────────────
   useEffect(() => {
     if (!currentUser) return;
 
-    fetchMessages();
-
     const channel = supabase
-      .channel('public:messages')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages'
-      }, (payload) => {
-        const newMessage = payload.new;
-        if (newMessage.sender_id === currentUser.id || newMessage.receiver_id === currentUser.id) {
-          decrypt(newMessage.payload, SHARED_KEY).then(decryptedText => {
-            setMessages(prev => [...prev, {
-              id: newMessage.id,
-              text: decryptedText,
-              sent: newMessage.sender_id === currentUser.id,
-              time: new Date(newMessage.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-              sender_id: newMessage.sender_id
-            }]);
-          });
+      .channel("public:messages")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const newMessage = payload.new;
+          if (
+            newMessage.sender_id === currentUser.id ||
+            newMessage.receiver_id === currentUser.id
+          ) {
+            // Only add if belongs to the active conversation
+            const isCurrentConversation =
+              (newMessage.sender_id === currentUser.id &&
+                newMessage.receiver_id === selectedContact?.id) ||
+              (newMessage.sender_id === selectedContact?.id &&
+                newMessage.receiver_id === currentUser.id);
+
+            if (isCurrentConversation) {
+              decrypt(newMessage.payload, SHARED_KEY).then((decryptedText) => {
+                setMessages((prev) => {
+                  // Deduplicate
+                  if (prev.some((m) => m.id === newMessage.id)) return prev;
+                  return [
+                    ...prev,
+                    {
+                      id: newMessage.id,
+                      text: decryptedText,
+                      sent: newMessage.sender_id === currentUser.id,
+                      time: new Date(newMessage.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }),
+                      sender_id: newMessage.sender_id,
+                    },
+                  ];
+                });
+              });
+            }
+          }
         }
-      })
+      )
       .subscribe();
 
     return () => {
@@ -226,6 +324,7 @@ const ChatPage = () => {
     };
   }, [currentUser, selectedContact]);
 
+  // ── Auto scroll to bottom when messages arrive ────────────────────────
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -235,21 +334,28 @@ const ChatPage = () => {
   const fetchMessages = async () => {
     if (!currentUser || !selectedContact) return;
     const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${selectedContact.id}),and(sender_id.eq.${selectedContact.id},receiver_id.eq.${currentUser.id})`)
-      .order('created_at', { ascending: true });
+      .from("messages")
+      .select("*")
+      .or(
+        `and(sender_id.eq.${currentUser.id},receiver_id.eq.${selectedContact.id}),and(sender_id.eq.${selectedContact.id},receiver_id.eq.${currentUser.id})`
+      )
+      .order("created_at", { ascending: true });
 
     if (error) {
       console.error("Error fetching messages:", error);
     } else {
-      const decryptedMessages = await Promise.all(data.map(async m => ({
-        id: m.id,
-        text: await decrypt(m.payload, SHARED_KEY),
-        sent: m.sender_id === currentUser.id,
-        time: new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        sender_id: m.sender_id
-      })));
+      const decryptedMessages = await Promise.all(
+        data.map(async (m) => ({
+          id: m.id,
+          text: await decrypt(m.payload, SHARED_KEY),
+          sent: m.sender_id === currentUser.id,
+          time: new Date(m.created_at).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          sender_id: m.sender_id,
+        }))
+      );
       setMessages(decryptedMessages);
     }
   };
@@ -264,7 +370,7 @@ const ChatPage = () => {
       payload: encryptedPayload,
     };
 
-    const { error } = await supabase.from('messages').insert([newMessage]);
+    const { error } = await supabase.from("messages").insert([newMessage]);
 
     if (error) {
       toast.error("Failed to send message");
@@ -275,12 +381,19 @@ const ChatPage = () => {
 
   const handleLogout = async () => {
     try {
+      if (detectionIntervalRef.current) clearInterval(detectionIntervalRef.current);
       await supabase.auth.signOut();
       toast.success("Signed out successfully");
       navigate("/");
     } catch (error: any) {
       toast.error(error.message || "Failed to logout");
     }
+  };
+
+  const handleSelectContact = (contact: Contact) => {
+    setSelectedContact(contact);
+    setMessages([]); // Clear messages from previous conversation immediately
+    if (window.innerWidth < 768) setShowSidebar(false);
   };
 
   return (
@@ -315,7 +428,7 @@ const ChatPage = () => {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search..."
+              placeholder="Search contacts..."
               className="w-full bg-white/5 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 outline-none border border-white/5 focus:border-indigo-500/40 transition-colors"
             />
           </div>
@@ -324,14 +437,14 @@ const ChatPage = () => {
         {/* Contact list */}
         <div className="flex-1 overflow-y-auto">
           {filteredContacts.length === 0 ? (
-            <div className="px-4 py-10 text-center text-slate-600 text-xs">No contacts found</div>
+            <div className="px-4 py-10 text-center text-slate-600 text-xs">
+              No contacts found.<br />
+              <span className="text-slate-700">Waiting for others to join…</span>
+            </div>
           ) : filteredContacts.map((contact) => (
             <button
               key={contact.id}
-              onClick={() => {
-                setSelectedContact(contact);
-                if (window.innerWidth < 768) setShowSidebar(false);
-              }}
+              onClick={() => handleSelectContact(contact)}
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 border-r-2",
                 selectedContact?.id === contact.id
@@ -379,7 +492,7 @@ const ChatPage = () => {
       )}
 
       {/* ── MAIN CHAT AREA ─────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
 
         {/* Top header */}
         <header className="h-14 flex items-center justify-between px-4 gap-2 border-b border-white/5 bg-[#0d1526]/80 backdrop-blur-sm shrink-0">
@@ -406,7 +519,7 @@ const ChatPage = () => {
             )}
           </div>
 
-          {/* Right: camera dot + security badge — properly contained, no overflow */}
+          {/* Right: camera dot + security badge */}
           <div className="flex items-center gap-2 shrink-0">
             {/* Live camera scanning indicator */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
@@ -437,43 +550,74 @@ const ChatPage = () => {
             {authState === "UNLOCKED" ? (
               <><Unlock className="w-3 h-3" /> Secure View Active</>
             ) : authState === "VERIFYING" ? (
-              <><Loader2 className="w-3 h-3 animate-spin" /> Verifying identity...</>
+              <><Loader2 className="w-3 h-3 animate-spin" /> Verifying identity…</>
             ) : (
               <><Lock className="w-3 h-3" />
-                {lockReason === "MULTIPLE_FACES" ? " Multiple faces detected" :
+                {lockReason === "MULTIPLE_FACES" ? " Multiple faces detected — screen locked" :
                  lockReason === "NO_FACE" ? " No face detected — locked" :
+                 lockReason === "IDENTITY_MISMATCH" ? " Identity mismatch — access denied" :
+                 lockReason === "CAMERA_ERROR" ? " Camera error — verification failed" :
                  " Biometric verification required"}
               </>
             )}
           </div>
-          {confidence !== null && authState !== "LOCKED" && (
+          {confidence !== null && (
             <div className="flex items-center gap-1 font-mono">
               <span className="text-slate-600">Match:</span>
               <span className={cn(
                 "font-bold",
-                confidence > 80 ? "text-green-500" : confidence > 60 ? "text-yellow-400" : "text-red-500"
+                confidence >= CONFIDENCE_UNLOCK_THRESHOLD + 20 ? "text-green-500" :
+                confidence >= CONFIDENCE_UNLOCK_THRESHOLD ? "text-yellow-400" : "text-red-500"
               )}>{confidence}%</span>
             </div>
           )}
         </div>
 
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scroll-smooth" ref={scrollRef}>
-          {/* Locked banner */}
+        {/* Messages area (blurred/hidden when locked) */}
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 scroll-smooth relative" ref={scrollRef}>
+
+          {/* Locked overlay — full blur over any messages */}
           {authState !== "UNLOCKED" && (
-            <div className="flex flex-col items-center justify-center py-12 space-y-3 transition-all duration-500">
-              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/20">
+            <div className="absolute inset-0 z-10 backdrop-blur-xl bg-[#0f172a]/60 flex flex-col items-center justify-center gap-4 transition-all duration-500">
+              <div className={cn(
+                "w-16 h-16 rounded-full flex items-center justify-center border transition-all duration-300",
+                lockReason === "MULTIPLE_FACES"
+                  ? "bg-orange-500/10 border-orange-500/30"
+                  : "bg-red-500/10 border-red-500/20"
+              )}>
                 {lockReason === "MULTIPLE_FACES"
-                  ? <AlertTriangle className="w-5 h-5 text-red-500" />
-                  : <Lock className="w-5 h-5 text-red-500" />}
+                  ? <AlertTriangle className="w-7 h-7 text-orange-400" />
+                  : authState === "VERIFYING"
+                    ? <Loader2 className="w-7 h-7 text-indigo-400 animate-spin" />
+                    : <Lock className="w-7 h-7 text-red-400" />}
               </div>
-              <div className="text-center">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Messages Hidden</p>
-                <p className="text-xs text-slate-600 max-w-xs mx-auto">
-                  {lockReason === "MULTIPLE_FACES"
-                    ? "Multiple faces detected. Access suspended."
-                    : "Face the camera to unlock your messages."}
+              <div className="text-center px-6">
+                <p className="text-sm font-bold text-slate-300 uppercase tracking-widest mb-2">
+                  {lockReason === "MULTIPLE_FACES" ? "Intruder Alert" :
+                   authState === "VERIFYING" ? "Scanning…" : "Screen Locked"}
                 </p>
+                <p className="text-xs text-slate-500 max-w-xs mx-auto leading-relaxed">
+                  {lockReason === "MULTIPLE_FACES"
+                    ? "Another person detected in frame. Remove them to regain access."
+                    : lockReason === "NO_FACE"
+                      ? "No face detected. Look directly at the camera."
+                      : lockReason === "IDENTITY_MISMATCH"
+                        ? `Confidence too low (${confidence ?? 0}%). Move closer to your camera.`
+                        : lockReason === "CAMERA_ERROR"
+                          ? "Camera error. Please reload the page."
+                          : "Face the camera to unlock your secure messages."}
+                </p>
+                {confidence !== null && authState === "VERIFYING" && (
+                  <div className="mt-3 flex items-center justify-center gap-2">
+                    <div className="h-1 w-32 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+                        style={{ width: `${confidence}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-500 font-mono">{confidence}%</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -488,7 +632,7 @@ const ChatPage = () => {
             </div>
           )}
 
-          {/* Messages list */}
+          {/* Messages list — always rendered but blurred/hidden by overlay when locked */}
           {messages.map((msg, i) => (
             <MessageBubble
               key={msg.id}
@@ -510,7 +654,7 @@ const ChatPage = () => {
             <input
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
-              placeholder={isSecure ? "Type a secure message..." : "Face camera to unlock..."}
+              placeholder={isSecure ? "Type a secure message…" : "Face camera to unlock…"}
               disabled={!isSecure}
               className={cn(
                 "flex-1 bg-white/5 rounded-xl px-4 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 outline-none border border-white/5 transition-all duration-300 min-w-0",
@@ -547,7 +691,7 @@ const ChatPage = () => {
           </div>
           <div className="text-center">
             <h2 className="text-lg font-bold text-white mb-1">Initializing Vault</h2>
-            <p className="text-sm text-slate-500">Loading secure protocols...</p>
+            <p className="text-sm text-slate-500">Loading secure protocols…</p>
           </div>
         </div>
       )}
